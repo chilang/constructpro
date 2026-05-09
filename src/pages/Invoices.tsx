@@ -2,15 +2,17 @@ import { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import {
   Plus, Trash2, FileText, Send, ArrowRight,
-  FileDown, FileSpreadsheet, X
+  FileDown, FileSpreadsheet, X, Share2
 } from 'lucide-react';
 import {
   getCustomers, getCustomer, getInvoices, saveInvoice, deleteInvoice,
   convertEstimateToInvoice, getTaxRates, getCompanyInfo
 } from '../store/db';
-import { formatCurrency, formatDate, todayStr, dueDateStr, statusColor, shareViaMessage } from '../utils/format';
+import { formatCurrency, formatDate, todayStr, dueDateStr, statusColor } from '../utils/format';
+import { generatePDF } from '../utils/pdf';
 import { downloadPDF } from '../utils/pdf';
 import { downloadDocx } from '../utils/docx';
+import { nativeShare, nativeShareFile } from '../hooks/usePWA';
 import type { Invoice, LineItem, Customer } from '../types';
 
 interface InvoicesPageProps {
@@ -144,10 +146,66 @@ export default function InvoicesPage({ navState }: InvoicesPageProps) {
     if (customer) await downloadDocx(inv, customer, company);
   }
 
-  function handleSend(inv: Invoice) {
+  async function handleSend(inv: Invoice) {
     const customer = getCustomer(inv.customerId);
     const company = getCompanyInfo();
-    if (customer) shareViaMessage(inv, customer, company);
+    if (!customer) return;
+
+    const isEstimate = inv.status === 'estimate';
+    const title = isEstimate
+      ? `Estimate ${inv.invoiceNumber} from ${company.name}`
+      : `Invoice ${inv.invoiceNumber} from ${company.name}`;
+
+    const text = `Hi ${customer.name},\n\n` +
+      `${isEstimate ? 'Your estimate' : 'Your invoice'} #${inv.invoiceNumber}\n` +
+      `Total: ${formatCurrency(inv.total)}\n` +
+      `Due: ${formatDate(inv.dueDate)}\n\n` +
+      `Thank you for your business!\n${company.name}`;
+
+    // Try sharing the PDF as a file attachment
+    try {
+      const doc = generatePDF(inv, customer, company);
+      const pdfBlob = doc.output('blob');
+      const pdfFile = new File([pdfBlob], `${inv.invoiceNumber}.pdf`, { type: 'application/pdf' });
+
+      const shared = await nativeShareFile(pdfFile, {
+        title,
+        text,
+        email: customer.email,
+      });
+
+      if (!shared) {
+        // Fallback already handled by nativeShareFile (email)
+      }
+    } catch {
+      // If file share fails, try text-only native share
+      await nativeShare({ title, text, email: customer.email });
+    }
+  }
+
+  async function handleSharePDF(inv: Invoice) {
+    const customer = getCustomer(inv.customerId);
+    const company = getCompanyInfo();
+    if (!customer) return;
+
+    const isEstimate = inv.status === 'estimate';
+    const title = isEstimate
+      ? `Estimate ${inv.invoiceNumber} from ${company.name}`
+      : `Invoice ${inv.invoiceNumber} from ${company.name}`;
+
+    try {
+      const doc = generatePDF(inv, customer, company);
+      const pdfBlob = doc.output('blob');
+      const pdfFile = new File([pdfBlob], `${inv.invoiceNumber}.pdf`, { type: 'application/pdf' });
+
+      await nativeShareFile(pdfFile, {
+        title,
+        text: `${isEstimate ? 'Estimate' : 'Invoice'} ${inv.invoiceNumber} - ${formatCurrency(inv.total)}`,
+        email: customer.email,
+      });
+    } catch {
+      handleExportPDF(inv);
+    }
   }
 
   const tabs = [
@@ -439,7 +497,10 @@ export default function InvoicesPage({ navState }: InvoicesPageProps) {
                           <button onClick={() => handleExportDocx(inv)} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded" title="Export DOCX">
                             <FileSpreadsheet className="w-4 h-4" />
                           </button>
-                          <button onClick={() => handleSend(inv)} className="p-1.5 text-teal-600 hover:bg-teal-50 rounded" title="Send Message">
+                          <button onClick={() => handleSharePDF(inv)} className="p-1.5 text-teal-600 hover:bg-teal-50 rounded" title="Share PDF">
+                            <Share2 className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleSend(inv)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded" title="Send Message">
                             <Send className="w-4 h-4" />
                           </button>
                           <button onClick={() => handleEdit(inv)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded" title="Edit">
@@ -476,13 +537,14 @@ export default function InvoicesPage({ navState }: InvoicesPageProps) {
                     <span className="text-sm text-gray-500">{formatDate(inv.date)}</span>
                     <span className="font-bold">{formatCurrency(inv.total)}</span>
                   </div>
-                  <div className="flex gap-2 mt-3">
+                  <div className="flex gap-2 mt-3 flex-wrap">
                     {inv.status === 'estimate' && (
                       <button onClick={() => handleConvert(inv.id)} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Convert → Invoice</button>
                     )}
                     <button onClick={() => handleExportPDF(inv)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">PDF</button>
                     <button onClick={() => handleExportDocx(inv)} className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">DOCX</button>
-                    <button onClick={() => handleSend(inv)} className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded">Send</button>
+                    <button onClick={() => handleSharePDF(inv)} className="text-xs bg-teal-100 text-teal-700 px-2 py-1 rounded">Share</button>
+                    <button onClick={() => handleSend(inv)} className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Message</button>
                     <button onClick={() => handleEdit(inv)} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">Edit</button>
                     <button onClick={() => handleDelete(inv.id)} className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">Delete</button>
                   </div>

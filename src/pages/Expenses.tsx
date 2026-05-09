@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Camera, Receipt, X } from 'lucide-react';
+import { Plus, Camera, Receipt, X, ScanLine, Loader2 } from 'lucide-react';
 import { getCustomers, getExpenses, saveExpense, deleteExpense, getInvoices } from '../store/db';
 import { formatCurrency, formatDate, todayStr } from '../utils/format';
+import { scanReceipt, type OCRResult } from '../utils/ocr';
 import type { Expense, Invoice } from '../types';
 
 interface ExpensesPageProps {
@@ -16,6 +17,8 @@ export default function ExpensesPage({ navState }: ExpensesPageProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filterCustomer, setFilterCustomer] = useState('');
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const emptyForm: {
@@ -69,6 +72,31 @@ export default function ExpensesPage({ navState }: ExpensesPageProps) {
       setReceiptPreview(result);
     };
     reader.readAsDataURL(file);
+  }
+
+  async function handleScanReceipt() {
+    if (!form.receiptPhoto) return;
+    setScanning(true);
+    setOcrError(null);
+    try {
+      const result: OCRResult = await scanReceipt(form.receiptPhoto);
+      if (result.total !== null) {
+        setForm(f => ({ ...f, amount: result.total! }));
+      }
+      if (result.vendor) {
+        setForm(f => ({ ...f, vendor: result.vendor! }));
+      }
+      if (result.date) {
+        setForm(f => ({ ...f, date: result.date! }));
+      }
+      if (result.description) {
+        setForm(f => ({ ...f, description: result.description! }));
+      }
+    } catch (err: any) {
+      setOcrError(err.message || 'Failed to scan receipt');
+    } finally {
+      setScanning(false);
+    }
   }
 
   function handleSave() {
@@ -271,6 +299,29 @@ export default function ExpensesPage({ navState }: ExpensesPageProps) {
                         <X className="w-3 h-3" />
                       </button>
                     </div>
+                  )}
+                  {form.receiptPhoto && (
+                    <button
+                      type="button"
+                      onClick={handleScanReceipt}
+                      disabled={scanning}
+                      className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 font-medium text-sm disabled:opacity-50 transition-all"
+                    >
+                      {scanning ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Scanning receipt...
+                        </>
+                      ) : (
+                        <>
+                          <ScanLine className="w-4 h-4" />
+                          Auto-Scan Receipt (AI)
+                        </>
+                      )}
+                    </button>
+                  )}
+                  {ocrError && (
+                    <p className="mt-1 text-xs text-red-600">{ocrError}</p>
                   )}
                 </div>
               </div>

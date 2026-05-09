@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -9,7 +9,9 @@ import {
   Menu,
   X,
   Hammer,
+  Download,
 } from 'lucide-react';
+import { usePWAInstall } from '../hooks/usePWA';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -28,6 +30,7 @@ interface LayoutProps {
 
 export default function Layout({ children, currentPath, onNavigate }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { canInstall, install } = usePWAInstall();
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -60,6 +63,17 @@ export default function Layout({ children, currentPath, onNavigate }: LayoutProp
             );
           })}
         </nav>
+        {canInstall && (
+          <div className="px-3 py-4 border-t border-slate-700">
+            <button
+              onClick={install}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium bg-amber-500 text-slate-900 hover:bg-amber-400 transition-colors"
+            >
+              <Download className="w-5 h-5" />
+              Install App
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* Mobile sidebar overlay */}
@@ -94,6 +108,17 @@ export default function Layout({ children, currentPath, onNavigate }: LayoutProp
                 );
               })}
             </nav>
+            {canInstall && (
+              <div className="px-3 py-4 border-t border-slate-700">
+                <button
+                  onClick={() => { install(); setSidebarOpen(false); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium bg-amber-500 text-slate-900 hover:bg-amber-400"
+                >
+                  <Download className="w-5 h-5" />
+                  Install App
+                </button>
+              </div>
+            )}
           </aside>
         </div>
       )}
